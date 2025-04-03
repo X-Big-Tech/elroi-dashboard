@@ -52,7 +52,7 @@ const dataService = {
       console.log('Getting connected accounts for user:', userId);
       
       // First, try with basic fields only
-      const { data, error } = await supabase
+    const { data, error } = await supabase
         .from('oauth_connections')
         .select(`
           id,
@@ -88,9 +88,9 @@ const dataService = {
       const { data: connection, error: connectionError } = await supabase
         .from('oauth_connections')
         .select('id')
-        .eq('user_id', userId)
+      .eq('user_id', userId)
         .eq('provider', provider)
-        .single();
+      .single();
 
       if (connectionError || !connection) {
         throw new Error('Connection not found');
@@ -275,6 +275,161 @@ const dataService = {
           refresh_token: tokenData.refresh_token,
           expires_in: tokenData.expires_in
         };
+      } else if (provider === 'twitch') {
+        // For Twitch, exchange the authorization code for tokens
+        const clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
+        const clientSecret = import.meta.env.VITE_TWITCH_CLIENT_SECRET;
+        
+        if (!clientId || !clientSecret) {
+          throw new Error('Twitch OAuth credentials are missing from environment variables');
+        }
+        
+        console.log(`Using Twitch credentials - Client ID: ${clientId.substring(0, 5)}...`);
+        console.log(`Sending request to Twitch's token endpoint: https://id.twitch.tv/oauth2/token`);
+        
+        // Build token request parameters
+        const tokenParams = {
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+        };
+        
+        console.log('Twitch token request parameters:', {
+          ...tokenParams,
+          client_secret: '******', // Don't log the actual secret
+          code: code ? `${code.substring(0, 10)}...` : null,
+        });
+        
+        const tokenResponse = await fetch('https://id.twitch.tv/oauth2/token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams(tokenParams),
+        });
+        
+        console.log('Twitch token response status:', tokenResponse.status);
+        
+        if (!tokenResponse.ok) {
+          const errorText = await tokenResponse.text();
+          console.error(`Twitch token exchange error (${tokenResponse.status}): ${errorText}`);
+          
+          try {
+            const errorData = JSON.parse(errorText);
+            console.error('Parsed Twitch error data:', errorData);
+            throw new Error(`Failed to exchange Twitch code for tokens: ${errorData.error || errorData.message || 'Unknown error'} - ${errorData.error_description || errorData.status || 'No error description'}`);
+          } catch (parseError) {
+            throw new Error(`Failed to exchange code for Twitch tokens: ${tokenResponse.statusText} (${tokenResponse.status})`);
+          }
+        }
+        
+        const tokenData = await tokenResponse.json();
+        console.log('Twitch token exchange successful:', {
+          access_token_length: tokenData.access_token?.length || 0,
+          refresh_token_length: tokenData.refresh_token?.length || 0,
+          expires_in: tokenData.expires_in,
+          scope: tokenData.scope
+        });
+        
+        return {
+          access_token: tokenData.access_token,
+          refresh_token: tokenData.refresh_token,
+          expires_in: tokenData.expires_in
+        };
+      } else if (provider === 'facebook') {
+        // For Facebook, exchange the authorization code for tokens
+        const clientId = import.meta.env.VITE_FACEBOOK_APP_ID;
+        const clientSecret = import.meta.env.VITE_FACEBOOK_APP_SECRET;
+        
+        if (!clientId || !clientSecret) {
+          throw new Error('Facebook OAuth credentials are missing from environment variables');
+        }
+        
+        console.log(`Using Facebook credentials - App ID: ${clientId.substring(0, 5)}...`);
+        console.log(`Sending request to Facebook's token endpoint: https://graph.facebook.com/v18.0/oauth/access_token`);
+        
+        // Build token request parameters
+        const tokenParams = {
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+        };
+        
+        console.log('Facebook token request parameters:', {
+          ...tokenParams,
+          client_secret: '******', // Don't log the actual secret
+          code: code ? `${code.substring(0, 10)}...` : null,
+        });
+        
+        const tokenResponse = await fetch('https://graph.facebook.com/v18.0/oauth/access_token', {
+          method: 'GET',
+    headers: { 
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          // Convert to query params for GET request
+          url: `https://graph.facebook.com/v18.0/oauth/access_token?${new URLSearchParams(tokenParams).toString()}`,
+        });
+        
+        console.log('Facebook token response status:', tokenResponse.status);
+        
+        if (!tokenResponse.ok) {
+          const errorText = await tokenResponse.text();
+          console.error(`Facebook token exchange error (${tokenResponse.status}): ${errorText}`);
+          
+          try {
+            const errorData = JSON.parse(errorText);
+            console.error('Parsed Facebook error data:', errorData);
+            throw new Error(`Failed to exchange Facebook code for tokens: ${errorData.error?.message || 'Unknown error'}`);
+          } catch (parseError) {
+            throw new Error(`Failed to exchange code for Facebook tokens: ${tokenResponse.statusText} (${tokenResponse.status})`);
+          }
+        }
+        
+        const tokenData = await tokenResponse.json();
+        console.log('Facebook token exchange successful:', {
+          access_token_length: tokenData.access_token?.length || 0,
+          expires_in: tokenData.expires_in
+        });
+        
+        // For Facebook, we need to make a separate request to get a long-lived token
+        console.log('Exchanging short-lived token for long-lived token...');
+        
+        const longLivedTokenParams = {
+          grant_type: 'fb_exchange_token',
+          client_id: clientId,
+          client_secret: clientSecret,
+          fb_exchange_token: tokenData.access_token,
+        };
+        
+        const longLivedTokenResponse = await fetch(
+          `https://graph.facebook.com/v18.0/oauth/access_token?${new URLSearchParams(longLivedTokenParams).toString()}`
+        );
+        
+        if (!longLivedTokenResponse.ok) {
+          console.error('Failed to exchange for long-lived token, continuing with short-lived token');
+          return {
+            access_token: tokenData.access_token,
+            refresh_token: null, // Facebook doesn't provide refresh tokens in the same way
+            expires_in: tokenData.expires_in
+          };
+        }
+        
+        const longLivedTokenData = await longLivedTokenResponse.json();
+        console.log('Long-lived token exchange successful:', {
+          access_token_length: longLivedTokenData.access_token?.length || 0,
+          expires_in: longLivedTokenData.expires_in || 'N/A'
+        });
+        
+        return {
+          access_token: longLivedTokenData.access_token || tokenData.access_token,
+          refresh_token: null, // Facebook uses a different refresh mechanism
+          expires_in: longLivedTokenData.expires_in || tokenData.expires_in
+        };
+      } else {
+        throw new Error(`Provider ${provider} not supported for token exchange`);
       }
     } catch (error) {
       console.error(`Error exchanging code for ${provider} tokens:`, error);

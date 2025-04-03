@@ -14,7 +14,11 @@ This guide will help you set up Google OAuth credentials to connect Google as a 
 2. Search for and enable the following APIs:
    - Google OAuth2 API
    - People API (for profile information)
-   - Any other Google APIs you need data from (e.g., YouTube Data API)
+   - Google Calendar API
+   - YouTube Data API v3
+   - Gmail API
+   - Google Drive API
+   - Any other Google APIs you need data from
 
 ## 3. Configure OAuth Consent Screen
 
@@ -27,7 +31,10 @@ This guide will help you set up Google OAuth credentials to connect Google as a 
 4. Add the scopes you need:
    - `.../auth/userinfo.email`
    - `.../auth/userinfo.profile`
-   - Any other scopes needed for additional APIs
+   - `.../auth/calendar.readonly`
+   - `.../auth/youtube.readonly`
+   - `.../auth/gmail.metadata`
+   - `.../auth/drive.metadata.readonly`
 5. Add test users if in external user type mode
 
 ## 4. Create OAuth Credentials
@@ -54,7 +61,18 @@ VITE_GOOGLE_CLIENT_ID=your_client_id_here
 VITE_GOOGLE_CLIENT_SECRET=your_client_secret_here
 ```
 
-## 6. Security Considerations
+## 6. Data Types Collected
+
+With the current integration, the following data types can be collected:
+
+1. **User Profile** - Basic information like name, email, and profile picture
+2. **Calendar Events** - Upcoming events from the user's primary calendar
+3. **YouTube Subscriptions** - Channels the user is subscribed to
+4. **YouTube Channel** - If the user has a channel, stats and metadata about it
+5. **Gmail** - Metadata about email counts (no message content)
+6. **Google Drive** - File metadata (names, types, modified dates - no content)
+
+## 7. Security Considerations
 
 For production use, the OAuth token exchange should be done on a secure server, not client-side. This implementation is simplified for development purposes.
 
@@ -63,6 +81,7 @@ In a production environment:
 2. Keep your client secret secure on the server
 3. Use HTTPS for all OAuth-related traffic
 4. Consider implementing PKCE (Proof Key for Code Exchange) for added security
+5. Limit the OAuth scopes to only what you need
 
 ## Testing the Connection
 
@@ -71,6 +90,7 @@ In a production environment:
 3. Click "Connect Google"
 4. You should see a popup for Google authentication
 5. After authenticating, the popup should close and your Google account should appear in the Connected Accounts list
+6. The additional data will be fetched and stored in your database
 
 ## Troubleshooting
 
@@ -79,5 +99,6 @@ If you encounter issues:
 1. Check browser console for error messages
 2. Verify your OAuth credentials and redirect URIs are correct
 3. Make sure the necessary APIs are enabled in your Google Cloud project
-4. Check that your OAuth consent screen is configured properly
-5. Verify that the scopes requested match what you've configured in the consent screen 
+4. Check that your OAuth consent screen is configured properly with all required scopes
+5. For YouTube data issues, ensure the user has a Google account with YouTube activity
+6. For Gmail issues, ensure the `gmail.metadata` scope is properly added 

@@ -118,7 +118,15 @@
         else if (document.referrer.includes('accounts.spotify.com')) {
           provider = 'spotify';
           console.log('Detected Spotify provider from referrer URL');
-        } 
+        }
+        else if (document.referrer.includes('id.twitch.tv')) {
+          provider = 'twitch';
+          console.log('Detected Twitch provider from referrer URL');
+        }
+        else if (document.referrer.includes('facebook.com') || document.referrer.includes('fb.com')) {
+          provider = 'facebook';
+          console.log('Detected Facebook provider from referrer URL');
+        }
         else {
           // Try to get provider from URL patterns
           const referrer = document.referrer.toLowerCase();
@@ -127,6 +135,13 @@
           if (referrer.includes('spotify') || currentUrl.includes('spotify')) {
             provider = 'spotify';
             console.log('Detected Spotify provider from URL pattern');
+          } else if (referrer.includes('twitch') || currentUrl.includes('twitch')) {
+            provider = 'twitch';
+            console.log('Detected Twitch provider from URL pattern');
+          } else if (referrer.includes('facebook') || referrer.includes('fb.com') || 
+                    currentUrl.includes('facebook') || currentUrl.includes('fb.com')) {
+            provider = 'facebook';
+            console.log('Detected Facebook provider from URL pattern');
           } else if (referrer.includes('google') || currentUrl.includes('google')) {
             provider = 'google';
             console.log('Detected Google provider from URL pattern');
@@ -135,6 +150,12 @@
             if (state && state.includes('spotify')) {
               provider = 'spotify';
               console.log('Detected Spotify provider from state parameter');
+            } else if (state && state.includes('twitch')) {
+              provider = 'twitch';
+              console.log('Detected Twitch provider from state parameter');
+            } else if (state && state.includes('facebook')) {
+              provider = 'facebook';
+              console.log('Detected Facebook provider from state parameter');
             } else {
               // Default to google as last resort
               provider = 'google'; // Default fallback

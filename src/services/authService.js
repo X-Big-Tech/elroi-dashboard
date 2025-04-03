@@ -119,7 +119,7 @@ const authService = {
 function getProviderScopes(provider) {
   switch(provider) {
     case 'google':
-      return 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/youtube.readonly';
+      return 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/gmail.metadata https://www.googleapis.com/auth/drive.metadata.readonly';
     case 'twitch':
       return 'user:read:email analytics:read:games';
     case 'discord':

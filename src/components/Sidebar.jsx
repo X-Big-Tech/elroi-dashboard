@@ -15,13 +15,13 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
       <div className="p-4">
         <h2 className="text-xl font-bold">Elroi</h2>
         <p className="text-gray-400 text-sm">Data Dashboard</p>
-      </div>
+          </div>
       
       <nav className="mt-6">
         <ul>
           {tabs.map(tab => (
             <li key={tab.id} className="mb-2">
-              <button
+            <button
                 onClick={() => setActiveTab(tab.id)}
                 className={`w-full flex items-center px-4 py-3 text-left ${
                   activeTab === tab.id
@@ -31,7 +31,7 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
               >
                 <span className="mr-3">{tab.icon}</span>
                 {tab.label}
-              </button>
+            </button>
             </li>
           ))}
         </ul>

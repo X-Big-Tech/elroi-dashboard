@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaGoogle, FaSpotify, FaSpinner, FaExclamationCircle, FaCheckCircle, FaTrash } from 'react-icons/fa';
+import { FaGoogle, FaSpotify, FaSpinner, FaExclamationCircle, FaCheckCircle, FaTrash, FaTwitch, FaLink, FaFacebook } from 'react-icons/fa';
 import { supabase } from '../lib/supabaseClient';
 import dataService from '../services/dataService';
 
@@ -141,10 +141,21 @@ const ConnectedAccounts = ({ user }) => {
       
       if (provider === 'google') {
         clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-        scopes = 'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
+        scopes = 'https://www.googleapis.com/auth/userinfo.profile ' + 
+                'https://www.googleapis.com/auth/userinfo.email ' +
+                'https://www.googleapis.com/auth/calendar.readonly ' + 
+                'https://www.googleapis.com/auth/youtube.readonly ' +
+                'https://www.googleapis.com/auth/gmail.metadata ' +
+                'https://www.googleapis.com/auth/drive.metadata.readonly';
       } else if (provider === 'spotify') {
         clientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID;
         scopes = 'user-read-email user-read-private user-top-read user-read-recently-played user-library-read';
+      } else if (provider === 'twitch') {
+        clientId = import.meta.env.VITE_TWITCH_CLIENT_ID;
+        scopes = 'user:read:email analytics:read:games';
+      } else if (provider === 'facebook') {
+        clientId = import.meta.env.VITE_FACEBOOK_APP_ID;
+        scopes = 'email,public_profile,user_posts,user_photos';
       } else {
         throw new Error(`Provider ${provider} not supported yet`);
       }
@@ -186,6 +197,21 @@ const ConnectedAccounts = ({ user }) => {
           `&scope=${encodeURIComponent(scopes)}` +
           `&state=${state}` +
           `&show_dialog=true`;
+      } else if (provider === 'twitch') {
+        oauthUrl = `https://id.twitch.tv/oauth2/authorize?` +
+          `client_id=${clientId}` +
+          `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+          `&response_type=code` +
+          `&scope=${encodeURIComponent(scopes)}` +
+          `&state=${state}` +
+          `&force_verify=true`;
+      } else if (provider === 'facebook') {
+        oauthUrl = `https://www.facebook.com/v18.0/dialog/oauth?` +
+          `client_id=${clientId}` +
+          `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+          `&response_type=code` +
+          `&scope=${encodeURIComponent(scopes)}` +
+          `&state=${state}`;
       } else {
         throw new Error(`Provider ${provider} not supported yet`);
       }
@@ -290,6 +316,74 @@ const ConnectedAccounts = ({ user }) => {
           console.error('Error fetching Spotify profile:', profileError);
           throw profileError;
         }
+      } else if (provider === 'twitch') {
+        try {
+          // Fetch Twitch profile to get user ID
+          console.log('Fetching Twitch profile with token...');
+          const response = await fetch('https://api.twitch.tv/helix/users', {
+            headers: { 
+              'Authorization': `Bearer ${tokens.access_token}`,
+              'Client-Id': import.meta.env.VITE_TWITCH_CLIENT_ID
+            }
+          });
+          
+          console.log('Twitch profile API response status:', response.status);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('API error response:', errorText);
+            throw new Error(`Failed to fetch Twitch profile: ${response.statusText} (${response.status})`);
+          }
+          
+          const userData = await response.json();
+          console.log('Twitch user data:', userData);
+          
+          if (!userData.data || userData.data.length === 0) {
+            throw new Error('No user data returned from Twitch API');
+          }
+          
+          // Get the Twitch user ID
+          const profileData = userData.data[0];
+          providerUserId = profileData.id;
+          console.log('Retrieved Twitch user ID:', providerUserId);
+          
+          if (!providerUserId) {
+            throw new Error('Could not retrieve Twitch user ID from profile data');
+          }
+        } catch (profileError) {
+          console.error('Error fetching Twitch profile:', profileError);
+          throw profileError;
+        }
+      } else if (provider === 'facebook') {
+        try {
+          // Fetch Facebook profile to get user ID
+          console.log('Fetching Facebook profile with token...');
+          const response = await fetch('https://graph.facebook.com/v18.0/me?fields=id,name,email,picture', {
+            headers: { Authorization: `Bearer ${tokens.access_token}` }
+          });
+          
+          console.log('Facebook profile API response status:', response.status);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('API error response:', errorText);
+            throw new Error(`Failed to fetch Facebook profile: ${response.statusText} (${response.status})`);
+          }
+          
+          const profileData = await response.json();
+          console.log('Facebook profile data:', profileData);
+          
+          // Get the Facebook user ID
+          providerUserId = profileData.id;
+          console.log('Retrieved provider user ID:', providerUserId);
+          
+          if (!providerUserId) {
+            throw new Error('Could not retrieve Facebook user ID from profile data');
+          }
+        } catch (profileError) {
+          console.error('Error fetching Facebook profile:', profileError);
+          throw profileError;
+        }
       } else {
         throw new Error(`Provider ${provider} not supported yet`);
       }
@@ -345,6 +439,7 @@ const ConnectedAccounts = ({ user }) => {
       // Fetch data from provider API
       let providerData;
       if (provider === 'google') {
+        // Get the basic profile data
         const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
           headers: { Authorization: `Bearer ${accessToken}` }
         });
@@ -354,9 +449,123 @@ const ConnectedAccounts = ({ user }) => {
         }
         
         const profileData = await response.json();
-        console.log('Google API response:', profileData);
+        console.log('Google API profile response:', profileData);
         
+        // Initialize providerData with the profile
         providerData = { profile: profileData };
+        
+        // Fetch Google Calendar events
+        try {
+          console.log('Fetching calendar events...');
+          const calendarResponse = await fetch(
+            'https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=10&timeMin=' + 
+            new Date().toISOString(),
+            {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            }
+          );
+          
+          if (calendarResponse.ok) {
+            const calendarData = await calendarResponse.json();
+            console.log('Calendar data fetched:', calendarData.items?.length || 0, 'events');
+            providerData.calendar = calendarData;
+          } else {
+            console.log('Calendar fetch failed:', calendarResponse.status);
+          }
+        } catch (calendarError) {
+          console.warn('Error fetching calendar data:', calendarError);
+        }
+        
+        // Fetch YouTube subscriptions
+        try {
+          console.log('Fetching YouTube subscriptions...');
+          const youtubeSubsResponse = await fetch(
+            'https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&maxResults=10',
+            {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            }
+          );
+          
+          if (youtubeSubsResponse.ok) {
+            const youtubeSubsData = await youtubeSubsResponse.json();
+            console.log('YouTube subscriptions fetched:', youtubeSubsData.items?.length || 0);
+            providerData.youtubeSubscriptions = youtubeSubsData;
+          } else {
+            console.log('YouTube subscriptions fetch failed:', youtubeSubsResponse.status);
+          }
+        } catch (youtubeError) {
+          console.warn('Error fetching YouTube subscriptions:', youtubeError);
+        }
+        
+        // Fetch YouTube channel (if exists for user)
+        try {
+          console.log('Fetching YouTube channel info...');
+          const youtubeChannelResponse = await fetch(
+            'https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&mine=true',
+            {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            }
+          );
+          
+          if (youtubeChannelResponse.ok) {
+            const youtubeChannelData = await youtubeChannelResponse.json();
+            console.log('YouTube channel data fetched');
+            providerData.youtubeChannel = youtubeChannelData;
+            
+            // Log username info for debugging
+            if (youtubeChannelData.items?.length > 0) {
+              const channel = youtubeChannelData.items[0];
+              console.log('YouTube username/customUrl:', channel.snippet?.customUrl);
+              console.log('YouTube channel title:', channel.snippet?.title);
+            }
+          } else {
+            console.log('YouTube channel fetch failed:', youtubeChannelResponse.status);
+          }
+        } catch (youtubeError) {
+          console.warn('Error fetching YouTube channel:', youtubeError);
+        }
+        
+        // Fetch Gmail message count (metadata only)
+        try {
+          console.log('Fetching Gmail metadata...');
+          const gmailResponse = await fetch(
+            'https://www.googleapis.com/gmail/v1/users/me/profile',
+            {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            }
+          );
+          
+          if (gmailResponse.ok) {
+            const gmailData = await gmailResponse.json();
+            console.log('Gmail metadata fetched');
+            providerData.gmail = gmailData;
+          } else {
+            console.log('Gmail metadata fetch failed:', gmailResponse.status);
+          }
+        } catch (gmailError) {
+          console.warn('Error fetching Gmail metadata:', gmailError);
+        }
+        
+        // Fetch Google Drive file count (metadata only)
+        try {
+          console.log('Fetching Drive metadata...');
+          const driveResponse = await fetch(
+            'https://www.googleapis.com/drive/v3/files?pageSize=10&fields=kind,nextPageToken,incompleteSearch,files(id,name,mimeType,modifiedTime)',
+            {
+              headers: { Authorization: `Bearer ${accessToken}` }
+            }
+          );
+          
+          if (driveResponse.ok) {
+            const driveData = await driveResponse.json();
+            console.log('Drive files fetched:', driveData.files?.length || 0);
+            providerData.drive = driveData;
+          } else {
+            console.log('Drive metadata fetch failed:', driveResponse.status);
+          }
+        } catch (driveError) {
+          console.warn('Error fetching Drive metadata:', driveError);
+        }
       } else if (provider === 'spotify') {
         // Get user profile
         const profileResponse = await fetch('https://api.spotify.com/v1/me', {
@@ -405,6 +614,120 @@ const ConnectedAccounts = ({ user }) => {
           topTracks: topTracks,
           recentlyPlayed: recentlyPlayed
         };
+      } else if (provider === 'twitch') {
+        // Get Twitch user profile
+        const profileResponse = await fetch('https://api.twitch.tv/helix/users', {
+          headers: { 
+            'Authorization': `Bearer ${accessToken}`,
+            'Client-Id': import.meta.env.VITE_TWITCH_CLIENT_ID
+          }
+        });
+        
+        if (!profileResponse.ok) {
+          throw new Error(`Failed to fetch Twitch profile: ${profileResponse.statusText}`);
+        }
+        
+        const userData = await profileResponse.json();
+        
+        if (!userData.data || userData.data.length === 0) {
+          throw new Error('No user data returned from Twitch API');
+        }
+        
+        const profileData = userData.data[0];
+        console.log('Twitch profile data:', profileData);
+        
+        // Get user's channel information (optional)
+        let channelData = null;
+        try {
+          const channelResponse = await fetch(`https://api.twitch.tv/helix/channels?broadcaster_id=${profileData.id}`, {
+            headers: { 
+              'Authorization': `Bearer ${accessToken}`,
+              'Client-Id': import.meta.env.VITE_TWITCH_CLIENT_ID
+            }
+          });
+          
+          if (channelResponse.ok) {
+            const channelInfo = await channelResponse.json();
+            if (channelInfo.data && channelInfo.data.length > 0) {
+              channelData = channelInfo.data[0];
+              console.log('Twitch channel data:', channelData);
+            }
+          }
+        } catch (error) {
+          console.warn('Could not fetch Twitch channel information:', error);
+        }
+        
+        // Get user's analytics if available (requires analytics:read:games scope)
+        let analyticsData = null;
+        try {
+          const analyticsResponse = await fetch('https://api.twitch.tv/helix/analytics/games?first=10', {
+            headers: { 
+              'Authorization': `Bearer ${accessToken}`,
+              'Client-Id': import.meta.env.VITE_TWITCH_CLIENT_ID
+            }
+          });
+          
+          if (analyticsResponse.ok) {
+            analyticsData = await analyticsResponse.json();
+            console.log('Twitch analytics data:', analyticsData);
+          }
+        } catch (error) {
+          console.warn('Could not fetch Twitch analytics:', error);
+        }
+        
+        providerData = { 
+          profile: profileData,
+          channel: channelData,
+          analytics: analyticsData
+        };
+      } else if (provider === 'facebook') {
+        // Get Facebook user profile
+        const profileResponse = await fetch('https://graph.facebook.com/v18.0/me?fields=id,name,email,picture,link,birthday,location', {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        
+        if (!profileResponse.ok) {
+          throw new Error(`Failed to fetch Facebook profile: ${profileResponse.statusText}`);
+        }
+        
+        const profileData = await profileResponse.json();
+        console.log('Facebook profile data:', profileData);
+        
+        // Get user's posts if possible
+        let posts = null;
+        try {
+          const postsResponse = await fetch('https://graph.facebook.com/v18.0/me/posts?fields=id,message,created_time,full_picture&limit=10', {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+          
+          if (postsResponse.ok) {
+            posts = await postsResponse.json();
+            console.log('Facebook posts fetched:', posts.data?.length || 0);
+          }
+        } catch (error) {
+          console.warn('Could not fetch Facebook posts:', error);
+        }
+        
+        // Get user's photos if possible
+        let photos = null;
+        try {
+          const photosResponse = await fetch('https://graph.facebook.com/v18.0/me/photos?fields=id,picture,images,created_time&limit=10&type=uploaded', {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+          
+          if (photosResponse.ok) {
+            photos = await photosResponse.json();
+            console.log('Facebook photos fetched:', photos.data?.length || 0);
+          }
+        } catch (error) {
+          console.warn('Could not fetch Facebook photos:', error);
+        }
+        
+        providerData = { 
+          profile: profileData,
+          posts: posts,
+          photos: photos
+        };
       } else {
         throw new Error(`Provider ${provider} not supported yet`);
       }
@@ -444,9 +767,201 @@ const ConnectedAccounts = ({ user }) => {
           { key: 'picture', value: profile.picture },
         ].filter(point => point.value !== undefined);
         
-        console.log(`Storing ${dataPoints.length} Google data points...`);
-        
+        console.log(`Storing ${dataPoints.length} Google profile data points...`);
         await storeDataPoints(providerRecord.id, dataPoints);
+        
+        // Store calendar data if available
+        if (providerData.calendar && providerData.calendar.items) {
+          // Create a separate provider_data record for calendar
+          const { data: calendarRecord, error: calendarError } = await supabase
+            .from('provider_data')
+            .insert({
+              connection_id: connectionId,
+              provider: provider,
+              data_type: 'calendar',
+              last_updated: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (calendarError) {
+            console.error('Error storing calendar data:', calendarError);
+          } else {
+            // Store summary data about calendar
+            const calendarSummaryPoints = [
+              { key: 'total_events', value: providerData.calendar.items.length.toString() },
+              { key: 'calendar_timezone', value: providerData.calendar.timeZone },
+            ].filter(point => point.value !== undefined);
+            
+            console.log(`Storing calendar summary data points...`);
+            await storeDataPoints(calendarRecord.id, calendarSummaryPoints);
+            
+            // Store individual calendar events (limited number)
+            const events = providerData.calendar.items.slice(0, 10);
+            const calendarEventPoints = events.map((event, index) => ({
+              key: `event_${index + 1}`,
+              value: JSON.stringify({
+                id: event.id,
+                summary: event.summary,
+                start: event.start,
+                end: event.end,
+                status: event.status,
+                created: event.created
+              })
+            }));
+            
+            console.log(`Storing ${calendarEventPoints.length} calendar event data points...`);
+            await storeDataPoints(calendarRecord.id, calendarEventPoints);
+          }
+        }
+        
+        // Store YouTube subscriptions if available
+        if (providerData.youtubeSubscriptions && providerData.youtubeSubscriptions.items) {
+          // Create a separate provider_data record for YouTube subscriptions
+          const { data: youtubeSubsRecord, error: youtubeSubsError } = await supabase
+            .from('provider_data')
+            .insert({
+              connection_id: connectionId,
+              provider: provider,
+              data_type: 'youtube_subscriptions',
+              last_updated: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (youtubeSubsError) {
+            console.error('Error storing YouTube subscriptions data:', youtubeSubsError);
+          } else {
+            // Store total subscriptions count
+            const subscriptionSummary = [
+              { key: 'total_subscriptions', value: providerData.youtubeSubscriptions.pageInfo?.totalResults?.toString() || 
+                providerData.youtubeSubscriptions.items.length.toString() }
+            ];
+            
+            console.log(`Storing YouTube subscriptions summary...`);
+            await storeDataPoints(youtubeSubsRecord.id, subscriptionSummary);
+            
+            // Store individual subscriptions
+            const subscriptionDataPoints = providerData.youtubeSubscriptions.items.map((sub, index) => ({
+              key: `subscription_${index + 1}`,
+              value: JSON.stringify({
+                id: sub.id,
+                channel_id: sub.snippet?.resourceId?.channelId,
+                title: sub.snippet?.title,
+                description: sub.snippet?.description?.substring(0, 100),
+                thumbnail: sub.snippet?.thumbnails?.default?.url
+              })
+            }));
+            
+            console.log(`Storing ${subscriptionDataPoints.length} YouTube subscription data points...`);
+            await storeDataPoints(youtubeSubsRecord.id, subscriptionDataPoints);
+          }
+        }
+        
+        // Store YouTube channel data if available
+        if (providerData.youtubeChannel && providerData.youtubeChannel.items?.length > 0) {
+          // Create a separate provider_data record for YouTube channel
+          const { data: youtubeChannelRecord, error: youtubeChannelError } = await supabase
+            .from('provider_data')
+            .insert({
+              connection_id: connectionId,
+              provider: provider,
+              data_type: 'youtube_channel',
+              last_updated: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (youtubeChannelError) {
+            console.error('Error storing YouTube channel data:', youtubeChannelError);
+          } else {
+            const channel = providerData.youtubeChannel.items[0];
+            const channelDataPoints = [
+              { key: 'channel_id', value: channel.id },
+              { key: 'title', value: channel.snippet?.title },
+              { key: 'username', value: channel.snippet?.customUrl || channel.snippet?.title || 'N/A' },
+              { key: 'description', value: channel.snippet?.description?.substring(0, 500) },
+              { key: 'custom_url', value: channel.snippet?.customUrl },
+              { key: 'thumbnail', value: channel.snippet?.thumbnails?.default?.url },
+              { key: 'subscriber_count', value: channel.statistics?.subscriberCount },
+              { key: 'video_count', value: channel.statistics?.videoCount },
+              { key: 'view_count', value: channel.statistics?.viewCount }
+            ].filter(point => point.value !== undefined);
+            
+            console.log(`Storing ${channelDataPoints.length} YouTube channel data points...`);
+            await storeDataPoints(youtubeChannelRecord.id, channelDataPoints);
+          }
+        }
+        
+        // Store Gmail data if available
+        if (providerData.gmail) {
+          // Create a separate provider_data record for Gmail
+          const { data: gmailRecord, error: gmailError } = await supabase
+            .from('provider_data')
+            .insert({
+              connection_id: connectionId,
+              provider: provider,
+              data_type: 'gmail',
+              last_updated: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (gmailError) {
+            console.error('Error storing Gmail data:', gmailError);
+          } else {
+            const gmailDataPoints = [
+              { key: 'email', value: providerData.gmail.emailAddress },
+              { key: 'messages_total', value: providerData.gmail.messagesTotal?.toString() },
+              { key: 'threads_total', value: providerData.gmail.threadsTotal?.toString() },
+              { key: 'history_id', value: providerData.gmail.historyId }
+            ].filter(point => point.value !== undefined);
+            
+            console.log(`Storing ${gmailDataPoints.length} Gmail data points...`);
+            await storeDataPoints(gmailRecord.id, gmailDataPoints);
+          }
+        }
+        
+        // Store Drive data if available
+        if (providerData.drive && providerData.drive.files) {
+          // Create a separate provider_data record for Drive
+          const { data: driveRecord, error: driveError } = await supabase
+            .from('provider_data')
+            .insert({
+              connection_id: connectionId,
+              provider: provider,
+              data_type: 'drive',
+              last_updated: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (driveError) {
+            console.error('Error storing Drive data:', driveError);
+          } else {
+            // Store summary about Drive
+            const driveSummaryPoints = [
+              { key: 'files_count', value: providerData.drive.files.length.toString() }
+            ];
+            
+            console.log(`Storing Drive summary data points...`);
+            await storeDataPoints(driveRecord.id, driveSummaryPoints);
+            
+            // Store individual file metadata (limited number)
+            const fileDataPoints = providerData.drive.files.map((file, index) => ({
+              key: `file_${index + 1}`,
+              value: JSON.stringify({
+                id: file.id,
+                name: file.name,
+                mimeType: file.mimeType,
+                modifiedTime: file.modifiedTime
+              })
+            }));
+            
+            console.log(`Storing ${fileDataPoints.length} Drive file data points...`);
+            await storeDataPoints(driveRecord.id, fileDataPoints);
+          }
+        }
       } else if (provider === 'spotify') {
         // Store Spotify profile data points
         if (providerData.profile) {
@@ -500,6 +1015,171 @@ const ConnectedAccounts = ({ user }) => {
             
             console.log(`Storing ${trackDataPoints.length} Spotify track data points...`);
             await storeDataPoints(tracksRecord.id, trackDataPoints);
+          }
+        }
+      } else if (provider === 'twitch' && providerData.profile) {
+        const profile = providerData.profile;
+        
+        const profileDataPoints = [
+          { key: 'id', value: profile.id },
+          { key: 'login', value: profile.login },
+          { key: 'display_name', value: profile.display_name },
+          { key: 'type', value: profile.type },
+          { key: 'broadcaster_type', value: profile.broadcaster_type },
+          { key: 'description', value: profile.description },
+          { key: 'profile_image_url', value: profile.profile_image_url },
+          { key: 'offline_image_url', value: profile.offline_image_url },
+          { key: 'view_count', value: profile.view_count?.toString() },
+          { key: 'email', value: profile.email },
+          { key: 'created_at', value: profile.created_at }
+        ].filter(point => point.value !== undefined);
+        
+        console.log(`Storing ${profileDataPoints.length} Twitch profile data points...`);
+        await storeDataPoints(providerRecord.id, profileDataPoints);
+        
+        // Store channel data if available
+        if (providerData.channel) {
+          // Create a separate provider_data record for channel info
+          const { data: channelRecord, error: channelError } = await supabase
+            .from('provider_data')
+            .insert({
+              connection_id: connectionId,
+              provider: provider,
+              data_type: 'channel',
+              last_updated: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (channelError) {
+            console.error('Error storing channel data:', channelError);
+          } else {
+            const channel = providerData.channel;
+            const channelDataPoints = [
+              { key: 'broadcaster_id', value: channel.broadcaster_id },
+              { key: 'broadcaster_language', value: channel.broadcaster_language },
+              { key: 'title', value: channel.title },
+              { key: 'game_id', value: channel.game_id },
+              { key: 'game_name', value: channel.game_name },
+              { key: 'delay', value: channel.delay?.toString() }
+            ].filter(point => point.value !== undefined);
+            
+            console.log(`Storing ${channelDataPoints.length} Twitch channel data points...`);
+            await storeDataPoints(channelRecord.id, channelDataPoints);
+          }
+        }
+        
+        // Store analytics data if available
+        if (providerData.analytics && providerData.analytics.data && providerData.analytics.data.length > 0) {
+          // Create a separate provider_data record for analytics
+          const { data: analyticsRecord, error: analyticsError } = await supabase
+            .from('provider_data')
+            .insert({
+              connection_id: connectionId,
+              provider: provider,
+              data_type: 'analytics',
+              last_updated: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (analyticsError) {
+            console.error('Error storing analytics data:', analyticsError);
+          } else {
+            // Store each game analytic as a data point
+            const analyticsDataPoints = providerData.analytics.data.map((game, index) => ({
+              key: `game_${index + 1}`,
+              value: JSON.stringify({
+                game_id: game.game_id,
+                name: game.name,
+                url: game.URL,
+                date_range: game.date_range
+              })
+            }));
+            
+            console.log(`Storing ${analyticsDataPoints.length} Twitch analytics data points...`);
+            await storeDataPoints(analyticsRecord.id, analyticsDataPoints);
+          }
+        }
+      } else if (provider === 'facebook' && providerData.profile) {
+        const profile = providerData.profile;
+        
+        const profileDataPoints = [
+          { key: 'id', value: profile.id },
+          { key: 'name', value: profile.name },
+          { key: 'email', value: profile.email },
+          { key: 'picture', value: profile.picture?.data?.url },
+          { key: 'link', value: profile.link },
+          { key: 'birthday', value: profile.birthday },
+          { key: 'location', value: profile.location?.name }
+        ].filter(point => point.value !== undefined);
+        
+        console.log(`Storing ${profileDataPoints.length} Facebook profile data points...`);
+        await storeDataPoints(providerRecord.id, profileDataPoints);
+        
+        // Store posts data if available
+        if (providerData.posts && providerData.posts.data && providerData.posts.data.length > 0) {
+          // Create a separate provider_data record for posts
+          const { data: postsRecord, error: postsError } = await supabase
+            .from('provider_data')
+            .insert({
+              connection_id: connectionId,
+              provider: provider,
+              data_type: 'posts',
+              last_updated: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (postsError) {
+            console.error('Error storing posts data:', postsError);
+          } else {
+            // Store each post as a data point
+            const postsDataPoints = providerData.posts.data.map((post, index) => ({
+              key: `post_${index + 1}`,
+              value: JSON.stringify({
+                id: post.id,
+                message: post.message,
+                created_time: post.created_time,
+                picture: post.full_picture
+              })
+            }));
+            
+            console.log(`Storing ${postsDataPoints.length} Facebook post data points...`);
+            await storeDataPoints(postsRecord.id, postsDataPoints);
+          }
+        }
+        
+        // Store photos data if available
+        if (providerData.photos && providerData.photos.data && providerData.photos.data.length > 0) {
+          // Create a separate provider_data record for photos
+          const { data: photosRecord, error: photosError } = await supabase
+            .from('provider_data')
+            .insert({
+              connection_id: connectionId,
+              provider: provider,
+              data_type: 'photos',
+              last_updated: new Date().toISOString()
+            })
+            .select()
+            .single();
+          
+          if (photosError) {
+            console.error('Error storing photos data:', photosError);
+          } else {
+            // Store each photo as a data point
+            const photosDataPoints = providerData.photos.data.map((photo, index) => ({
+              key: `photo_${index + 1}`,
+              value: JSON.stringify({
+                id: photo.id,
+                picture: photo.picture,
+                source: photo.images?.[0]?.source,
+                created_time: photo.created_time
+              })
+            }));
+            
+            console.log(`Storing ${photosDataPoints.length} Facebook photo data points...`);
+            await storeDataPoints(photosRecord.id, photosDataPoints);
           }
         }
       }
@@ -628,11 +1308,15 @@ const ConnectedAccounts = ({ user }) => {
   const getProviderIcon = (provider) => {
     switch (provider) {
       case 'google':
-        return <FaGoogle className="h-5 w-5 text-red-500" />;
+        return <FaGoogle className="text-red-500" />;
       case 'spotify':
-        return <FaSpotify className="h-5 w-5 text-green-500" />;
+        return <FaSpotify className="text-green-500" />;
+      case 'twitch':
+        return <FaTwitch className="text-purple-500" />;
+      case 'facebook':
+        return <FaFacebook className="text-blue-600" />;
       default:
-        return null;
+        return <FaLink />;
     }
   };
 
@@ -680,6 +1364,34 @@ const ConnectedAccounts = ({ user }) => {
           <FaSpotify className="text-xl mr-3 text-green-500" />
           <span className="font-medium">
             {connecting ? 'Connecting...' : 'Connect Spotify'}
+          </span>
+          {connecting && <FaSpinner className="ml-2 animate-spin" />}
+        </button>
+        
+        <button
+          onClick={() => connectProvider('twitch')}
+          disabled={connecting || connections.some(c => c.provider === 'twitch')}
+          className={`flex items-center px-6 py-3 rounded-lg shadow-md ${
+            connecting ? 'bg-gray-300' : 'bg-white hover:bg-gray-100'
+          }`}
+        >
+          <FaTwitch className="text-xl mr-3 text-purple-500" />
+          <span className="font-medium">
+            {connecting ? 'Connecting...' : 'Connect Twitch'}
+          </span>
+          {connecting && <FaSpinner className="ml-2 animate-spin" />}
+        </button>
+        
+        <button
+          onClick={() => connectProvider('facebook')}
+          disabled={connecting || connections.some(c => c.provider === 'facebook')}
+          className={`flex items-center px-6 py-3 rounded-lg shadow-md ${
+            connecting ? 'bg-gray-300' : 'bg-white hover:bg-gray-100'
+          }`}
+        >
+          <FaFacebook className="text-xl mr-3 text-blue-600" />
+          <span className="font-medium">
+            {connecting ? 'Connecting...' : 'Connect Facebook'}
           </span>
           {connecting && <FaSpinner className="ml-2 animate-spin" />}
         </button>
@@ -768,7 +1480,7 @@ const ConnectedAccounts = ({ user }) => {
                   <p className="mt-1 max-w-2xl text-sm text-gray-500">
                     Last updated: {formatDate(providerData.profile?.last_updated)}
                   </p>
-                </div>
+              </div>
                 <button
                   onClick={() => setSelectedConnection(null)}
                   className="text-gray-400 hover:text-gray-500"
