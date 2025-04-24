@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FaSpinner, FaExclamationCircle, FaGoogle, FaYoutube, FaCalendar, FaEnvelope, FaFolder, FaSpotify, FaTwitch, FaFacebook } from 'react-icons/fa';
+import { FaSpinner, FaExclamationCircle, FaGoogle } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import dataService from '../services/dataService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -66,45 +66,23 @@ const DataOverview = ({ user }) => {
   const generateStats = (data) => {
     const statsArray = [];
     
-    // Generate YouTube statistics if available
-    if (data.youtube_channel) {
-      const channelData = data.youtube_channel.data;
-      if (channelData && channelData.subscriber_count) {
+    // Example: Generate data source statistics
+    if (data.google?.youtube) {
+      const youtubeData = data.google.youtube;
+      if (youtubeData.items && youtubeData.items.length > 0) {
+        const channel = youtubeData.items[0];
         statsArray.push({
           name: 'YouTube',
-          subscribers: parseInt(channelData.subscriber_count) || 0,
-          videos: parseInt(channelData.video_count) || 0,
-          views: (parseInt(channelData.view_count) || 0) / 1000 // Divide by 1000 for scale
+          subscribers: parseInt(channel.statistics.subscriberCount),
+          videos: parseInt(channel.statistics.videoCount),
+          views: parseInt(channel.statistics.viewCount) / 1000 // Divide by 1000 for scale
         });
       }
     }
     
-    // Add Gmail statistics if available
-    if (data.gmail) {
-      const gmailData = data.gmail.data;
-      if (gmailData && gmailData.messages_total) {
-        statsArray.push({
-          name: 'Gmail',
-          messages: parseInt(gmailData.messages_total) || 0,
-          threads: parseInt(gmailData.threads_total) || 0
-        });
-      }
-    }
-    
-    // Add Google Drive statistics if available
-    if (data.drive) {
-      const driveData = data.drive.data;
-      if (driveData && driveData.files_count) {
-        statsArray.push({
-          name: 'Drive',
-          files: parseInt(driveData.files_count) || 0
-        });
-      }
-    }
-    
-    // Add existing Twitch stats
     if (data.twitch) {
       // Process Twitch data for stats
+      // This is just a placeholder, actual implementation would depend on Twitch API response structure
       statsArray.push({
         name: 'Twitch',
         followers: data.twitch.data?.[0]?.follower_count || 0,
@@ -119,31 +97,7 @@ const DataOverview = ({ user }) => {
   const getProviderIcon = (provider) => {
     switch (provider) {
       case 'google':
-        return <FaGoogle className="text-red-500" />;
-      case 'spotify':
-        return <FaSpotify className="text-green-500" />;
-      case 'twitch':
-        return <FaTwitch className="text-purple-500" />;
-      case 'facebook':
-        return <FaFacebook className="text-blue-600" />;
-      default:
-        return null;
-    }
-  };
-
-  const getDataTypeIcon = (dataType) => {
-    switch (dataType) {
-      case 'profile':
-        return <FaGoogle className="text-red-500" />;
-      case 'calendar':
-        return <FaCalendar className="text-blue-500" />;
-      case 'youtube_channel':
-      case 'youtube_subscriptions':
-        return <FaYoutube className="text-red-600" />;
-      case 'gmail':
-        return <FaEnvelope className="text-yellow-500" />;
-      case 'drive':
-        return <FaFolder className="text-green-600" />;
+        return <FaGoogle className="text-xl" />;
       default:
         return null;
     }
@@ -152,25 +106,6 @@ const DataOverview = ({ user }) => {
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleString();
-  };
-
-  const formatYouTubeUsername = (username) => {
-    if (!username) return '';
-    
-    // If the username already has @ symbol, use it as is
-    if (username.startsWith('@')) {
-      return username;
-    }
-    
-    // If it contains a slash or domain, it's likely a URL - extract the last part
-    if (username.includes('/') || username.includes('.')) {
-      const parts = username.split(/[\/\.]/);
-      const lastPart = parts[parts.length - 1];
-      return lastPart ? `@${lastPart}` : '';
-    }
-    
-    // Otherwise just prepend @
-    return `@${username}`;
   };
 
   const getActiveConnections = () => {
@@ -292,7 +227,6 @@ const DataOverview = ({ user }) => {
                   <h4 className="text-lg font-medium capitalize">{conn.provider}</h4>
                 </div>
                 
-                {/* Profile Information */}
                 {profileData && (
                   <div className="mt-4">
                     <h5 className="text-md font-medium">Profile Information</h5>
@@ -312,155 +246,6 @@ const DataOverview = ({ user }) => {
                         </p>
                       </div>
                     </div>
-                  </div>
-                )}
-                
-                {/* Calendar Data */}
-                {conn.provider === 'google' && data.calendar?.data && (
-                  <div className="mt-6 border-t pt-4">
-                    <div className="flex items-center">
-                      <div className="mr-2"><FaCalendar className="text-blue-500" /></div>
-                      <h5 className="text-md font-medium">Calendar</h5>
-                    </div>
-                    <div className="mt-2">
-                      <p className="text-sm text-gray-700">
-                        <span className="font-medium">{data.calendar.data.total_events || '0'}</span> upcoming events
-                      </p>
-                      {data.calendar.data.event_1 && (
-                        <div className="mt-2">
-                          <h6 className="text-sm font-medium">Next Event:</h6>
-                          <div className="mt-1 p-2 bg-gray-50 rounded text-sm">
-                            {(() => {
-                              try {
-                                const event = JSON.parse(data.calendar.data.event_1);
-                                return (
-                                  <>
-                                    <p className="font-medium">{event.summary}</p>
-                                    <p className="text-xs text-gray-500">
-                                      {event.start && formatDate(event.start.dateTime || event.start.date)}
-                                    </p>
-                                  </>
-                                );
-                              } catch (e) {
-                                return <p>Error parsing event data</p>;
-                              }
-                            })()}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                
-                {/* YouTube Data */}
-                {conn.provider === 'google' && data.youtube_channel?.data && (
-                  <div className="mt-6 border-t pt-4">
-                    <div className="flex items-center">
-                      <div className="mr-2"><FaYoutube className="text-red-600" /></div>
-                      <h5 className="text-md font-medium">YouTube Channel</h5>
-                    </div>
-                    <p className="text-sm text-gray-700 mt-1 mb-2">
-                      <span className="font-medium">{data.youtube_channel.data.title}</span>
-                      {data.youtube_channel.data.username && (
-                        <span className="ml-2 text-gray-500">
-                          {data.youtube_channel.data.custom_url ? (
-                            <a 
-                              href={`https://youtube.com/${data.youtube_channel.data.custom_url}`} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-blue-500 hover:underline"
-                            >
-                              {formatYouTubeUsername(data.youtube_channel.data.username)}
-                            </a>
-                          ) : (
-                            formatYouTubeUsername(data.youtube_channel.data.username)
-                          )}
-                        </span>
-                      )}
-                    </p>
-                    <div className="mt-2 grid grid-cols-3 gap-4">
-                      <div className="bg-gray-50 p-2 rounded text-center">
-                        <p className="text-xs text-gray-500">Subscribers</p>
-                        <p className="font-medium">{data.youtube_channel.data.subscriber_count || '0'}</p>
-                      </div>
-                      <div className="bg-gray-50 p-2 rounded text-center">
-                        <p className="text-xs text-gray-500">Videos</p>
-                        <p className="font-medium">{data.youtube_channel.data.video_count || '0'}</p>
-                      </div>
-                      <div className="bg-gray-50 p-2 rounded text-center">
-                        <p className="text-xs text-gray-500">Views</p>
-                        <p className="font-medium">{data.youtube_channel.data.view_count || '0'}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* YouTube Subscriptions */}
-                {conn.provider === 'google' && data.youtube_subscriptions?.data && (
-                  <div className="mt-6 border-t pt-4">
-                    <div className="flex items-center">
-                      <div className="mr-2"><FaYoutube className="text-red-600" /></div>
-                      <h5 className="text-md font-medium">YouTube Subscriptions</h5>
-                    </div>
-                    <p className="text-sm text-gray-700 mt-1">
-                      <span className="font-medium">{data.youtube_subscriptions.data.total_subscriptions || '0'}</span> channel subscriptions
-                    </p>
-                  </div>
-                )}
-                
-                {/* Gmail Data */}
-                {conn.provider === 'google' && data.gmail?.data && (
-                  <div className="mt-6 border-t pt-4">
-                    <div className="flex items-center">
-                      <div className="mr-2"><FaEnvelope className="text-yellow-500" /></div>
-                      <h5 className="text-md font-medium">Gmail</h5>
-                    </div>
-                    <div className="mt-2 grid grid-cols-2 gap-4">
-                      <div className="bg-gray-50 p-2 rounded text-center">
-                        <p className="text-xs text-gray-500">Messages</p>
-                        <p className="font-medium">{data.gmail.data.messages_total || '0'}</p>
-                      </div>
-                      <div className="bg-gray-50 p-2 rounded text-center">
-                        <p className="text-xs text-gray-500">Threads</p>
-                        <p className="font-medium">{data.gmail.data.threads_total || '0'}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Google Drive Data */}
-                {conn.provider === 'google' && data.drive?.data && (
-                  <div className="mt-6 border-t pt-4">
-                    <div className="flex items-center">
-                      <div className="mr-2"><FaFolder className="text-green-600" /></div>
-                      <h5 className="text-md font-medium">Google Drive</h5>
-                    </div>
-                    <p className="text-sm text-gray-700 mt-1">
-                      <span className="font-medium">{data.drive.data.files_count || '0'}</span> files indexed
-                    </p>
-                    {data.drive.data.file_1 && (
-                      <div className="mt-2">
-                        <h6 className="text-sm font-medium">Recent Files:</h6>
-                        <div className="mt-1 space-y-1">
-                          {[1, 2, 3].map(i => {
-                            const fileKey = `file_${i}`;
-                            if (!data.drive.data[fileKey]) return null;
-                            
-                            try {
-                              const file = JSON.parse(data.drive.data[fileKey]);
-                              return (
-                                <div key={i} className="p-1 text-sm flex items-center">
-                                  <span className="w-4 h-4 rounded-sm bg-gray-200 mr-2 flex-shrink-0" />
-                                  <span className="truncate">{file.name}</span>
-                                </div>
-                              );
-                            } catch (e) {
-                              return null;
-                            }
-                          })}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
                 
